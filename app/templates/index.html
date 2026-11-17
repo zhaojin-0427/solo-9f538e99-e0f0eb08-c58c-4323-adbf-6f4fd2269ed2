@@ -53,6 +53,7 @@
   <form method="post" action="{{ url_for('partition') }}" style="margin-top:14px">
     <button class="btn" type="submit">③ 发起划分（求解）</button>
     <a class="btn secondary" href="{{ url_for('version_detail', version_id=version.id) }}">查看本版数据与连通关系</a>
+    <a class="btn secondary" href="{{ url_for('reviews') }}">标签复核裁决（双标注员 CSV → 新版本）</a>
   </form>
 </div>
 

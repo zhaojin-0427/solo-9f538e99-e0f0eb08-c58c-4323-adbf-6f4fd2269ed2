@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}复核草稿 #{{ draft.id }}{% endblock %}
+{% block body %}
+
+<div class="card">
+  <h2>复核草稿 #{{ draft.id }}（绑定输入版本 v{{ draft.source_version_id }}）
+    {% if draft.status == 'open' %}<span class="tag run">进行中</span>
+    {% elif draft.status == 'submitted' %}<span class="tag ok">已提交</span>
+    {% elif draft.status == 'stale' %}<span class="tag fail">已失效</span>
+    {% else %}<span class="tag train">{{ draft.status }}</span>{% endif %}
+  </h2>
+  <p class="muted">
+    共 {{ items|length }} 张 ｜ 一致 {{ draft.agreed_count }} 张（确认标签自动采用一致标签）｜
+    分歧 {{ draft.disagreed_count }} 张
+    {% if unresolved %}｜ <strong style="color:#b91c1c">尚待裁决 {{ unresolved|length }} 张</strong>{% endif %}
+    ｜ 创建于 {{ draft.created_at }}
+    {% if draft.submitted_at %}｜ 提交于 {{ draft.submitted_at }}{% endif %}
+  </p>
+  {% if draft.fail_reason and draft.status != 'submitted' %}
+  <div class="reason">上次提交失败原因：{{ draft.fail_reason }}</div>
+  {% endif %}
+
+  {% if draft.status == 'stale' %}
+  <div class="reason">
+    草稿绑定的 v{{ draft.source_version_id }} 已被更正（全量数据或配额变化），草稿已失效、不得提交。
+    原版本的清单与下载状态不受影响；请在「标签复核裁决」页基于当前版本重新上传两份复核 CSV。
+  </div>
+  {% elif draft.status == 'submitted' %}
+  <div class="flash success">
+    草稿已提交并生成新版本 <strong>v{{ draft.new_version_id }}</strong>，
+    患者归属、重复关系与配额沿用原版本，类别集合不变；旧版本清单已停供，待新版本重新划分成功后恢复下载。
+  </div>
+  {% elif draft.status == 'discarded' %}
+  <div class="reason">该草稿已作废，仅保留历史记录。</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>逐图像复核与裁决
+    <span class="muted">（标签限当前类别：{{ classes|join('、') }}）</span>
+  </h2>
+  {% if draft.status == 'open' %}
+  <form method="post" id="adjudicate-form">
+  {% endif %}
+  <table>
+    <tr>
+      <th>图像号</th><th>标注员 A</th><th>标注员 B</th><th>复核结果</th>
+      <th>确认标签（质控裁决）</th>
+    </tr>
+    {% for it in items %}
+    <tr {% if not it.is_agreed %}style="background:#fffbeb"{% endif %}>
+      <td>{{ it.image_no }}</td>
+      <td>{{ it.label_a }}</td>
+      <td>{{ it.label_b }}</td>
+      <td>
+        {% if it.is_agreed %}<span class="tag ok">一致</span>
+        {% else %}<span class="tag fail">分歧</span>{% endif %}
+      </td>
+      <td>
+        {% if it.is_agreed %}
+          <span class="muted">{{ it.confirmed_label }}（自动采用）</span>
+        {% elif draft.status == 'open' %}
+          <select name="decision::{{ it.image_no }}">
+            <option value="">— 请选择 —</option>
+            {% for c in classes %}
+            <option value="{{ c }}" {% if it.confirmed_label == c %}selected{% endif %}>
+              {{ c }}{% if c == it.label_a %}（A）{% endif %}{% if c == it.label_b %}（B）{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          {% if not it.confirmed_label %}<span class="tag fail">待裁决</span>{% endif %}
+        {% else %}
+          {{ it.confirmed_label or '—' }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  {% if draft.status == 'open' %}
+  <p style="margin-top:16px">
+    <button class="btn secondary" type="submit"
+            formaction="{{ url_for('review_save', draft_id=draft.id) }}">暂存裁决</button>
+    <button class="btn" type="submit"
+            formaction="{{ url_for('review_submit', draft_id=draft.id) }}">提交并生成新版本</button>
+    <button class="btn secondary" type="submit"
+            formaction="{{ url_for('review_discard', draft_id=draft.id) }}"
+            onclick="return confirm('确认作废该草稿？作废后可重新上传复核 CSV。');">作废草稿</button>
+  </p>
+  <p class="muted">
+    提交前系统将复查：绑定版本仍为当前版本、全部分歧已裁决、确认标签仅限当前类别且类别集合不变。
+    任一项不满足则整体拒绝提交，原版本与下载状态保持不变；同一草稿重复提交不会产生第二个新版本。
+  </p>
+  </form>
+  {% endif %}
+</div>
+
+<p><a class="btn secondary small" href="{{ url_for('reviews') }}">返回复核列表</a>
+   <a class="btn secondary small" href="{{ url_for('index') }}">当前版本</a></p>
+
+{% if draft.status == 'open' and unresolved %}
+<script>
+// 提交前拦截：存在未裁决分歧时给出明确提示（暂存按钮不拦截）
+document.getElementById('adjudicate-form').addEventListener('submit', function (ev) {
+  if (ev.submitter && ev.submitter.formAction.indexOf('/submit') !== -1) {
+    var empty = Array.prototype.slice.call(document.querySelectorAll('select[name^="decision::"]'))
+      .filter(function (s) { return s.value === ''; });
+    if (empty.length) {
+      ev.preventDefault();
+      alert('还有 ' + empty.length + ' 个分歧项未裁决，请逐项选定确认标签后再提交。');
+    }
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

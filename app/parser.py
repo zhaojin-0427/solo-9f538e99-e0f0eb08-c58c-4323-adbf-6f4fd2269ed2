@@ -26,6 +26,16 @@ DUP_HEADERS = [
     ("image1", "image2"),
     ("a", "b"),
 ]
+# 复核 CSV：按图像号列出标签。标签列支持「标签/类别/标注」等中英表头。
+REVIEW_HEADERS = [
+    ("图像号", "标签"),
+    ("图像号", "类别"),
+    ("图像号", "标注"),
+    ("image_no", "label"),
+    ("image_no", "class_name"),
+    ("image", "label"),
+    ("image_id", "label"),
+]
 
 
 class InputError(ValueError):
@@ -121,6 +131,40 @@ def parse_dups_csv(text: str) -> list[tuple[str, str]]:
             raise InputError(f"重复关系 CSV 第 {n} 行存在空值")
         edges.append((a, b))
     return edges
+
+
+@dataclass
+class ReviewRow:
+    image_no: str
+    label: str
+
+
+def parse_review_csv(text: str) -> list[ReviewRow]:
+    """解析标注员复核 CSV：两列（图像号、标签），支持中英表头/无表头。"""
+    rows = _read_rows(text)
+    col_idx = _match_header(rows[0], REVIEW_HEADERS)
+    if col_idx is not None:
+        data_rows = rows[1:]
+        start_line = 2
+    else:
+        col_idx = [0, 1]
+        data_rows = rows
+        start_line = 1
+    out: list[ReviewRow] = []
+    seen: set[str] = set()
+    for n, row in enumerate(data_rows, start=start_line):
+        if len(row) < 2:
+            raise InputError(f"复核 CSV 第 {n} 行列数不足，需要 2 列（图像号、标签）")
+        image_no, label = row[0], row[1]
+        if not image_no or not label:
+            raise InputError(f"复核 CSV 第 {n} 行存在空值（图像号、标签均必填）")
+        if image_no in seen:
+            raise InputError(f"复核 CSV 中图像号重复：{image_no}")
+        seen.add(image_no)
+        out.append(ReviewRow(image_no, label))
+    if not out:
+        raise InputError("复核 CSV 没有数据行")
+    return out
 
 
 class UnionFind:

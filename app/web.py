@@ -178,6 +178,99 @@ def create_app(db_path: str | None = None) -> Flask:
         rows = svc.registry_snapshot()
         return render_template("registry.html", rows=rows)
 
+    # ------------------------------------------------------------ 标签复核
+    @app.route("/reviews")
+    def reviews():
+        version = svc.current_version()
+        drafts = svc.list_drafts()
+        classes = version["class_names"].split(",") if version else []
+        return render_template(
+            "reviews.html", version=version, drafts=drafts, classes=classes
+        )
+
+    @app.route("/reviews/upload", methods=["POST"])
+    def review_upload():
+        file_a = request.files.get("review_a_csv")
+        file_b = request.files.get("review_b_csv")
+        if not file_a or not file_a.filename or not file_b or not file_b.filename:
+            flash("请同时选择两位标注员的复核 CSV 文件", "error")
+            return redirect(url_for("reviews"))
+        csv_a = _decode(file_a.read())
+        csv_b = _decode(file_b.read())
+        try:
+            draft_id = svc.create_review_draft(csv_a, csv_b)
+        except InputError as exc:
+            flash(f"复核 CSV 校验失败，未保存草稿：{exc}", "error")
+            return redirect(url_for("reviews"))
+        draft = svc.get_draft(draft_id)
+        flash(
+            f"复核草稿 #{draft_id} 已生成：一致 {draft['agreed_count']} 张、"
+            f"分歧 {draft['disagreed_count']} 张。一致标签已直接进入草稿，"
+            "请逐项裁决分歧后提交。",
+            "success",
+        )
+        return redirect(url_for("review_detail", draft_id=draft_id))
+
+    @app.route("/reviews/<int:draft_id>")
+    def review_detail(draft_id: int):
+        draft = svc.get_draft(draft_id)
+        if draft is None:
+            abort(404)
+        version = svc.get_version(draft["source_version_id"])
+        items = svc.get_draft_items(draft_id)
+        classes = version["class_names"].split(",")
+        # 当前版本（可能已不是草稿绑定版本）
+        current = svc.current_version()
+        unresolved = [
+            i for i in items if not i["is_agreed"] and not i["confirmed_label"]
+        ]
+        return render_template(
+            "review_detail.html",
+            draft=draft,
+            version=version,
+            current=current,
+            items=items,
+            classes=classes,
+            unresolved=unresolved,
+        )
+
+    @app.route("/reviews/<int:draft_id>/save", methods=["POST"])
+    def review_save(draft_id: int):
+        decisions = _extract_decisions(request.form)
+        try:
+            svc.save_adjudication(draft_id, decisions)
+        except InputError as exc:
+            flash(f"裁决暂存失败：{exc}", "error")
+        else:
+            flash("裁决已暂存（尚未生成新版本，可继续调整后提交）。", "success")
+        return redirect(url_for("review_detail", draft_id=draft_id))
+
+    @app.route("/reviews/<int:draft_id>/submit", methods=["POST"])
+    def review_submit(draft_id: int):
+        decisions = _extract_decisions(request.form)
+        try:
+            new_vid = svc.submit_review_draft(draft_id, decisions)
+        except InputError as exc:
+            flash(f"提交失败，原版本及下载状态保持不变：{exc}", "error")
+            return redirect(url_for("review_detail", draft_id=draft_id))
+        flash(
+            f"复核草稿 #{draft_id} 已提交，确认标签生成新版本 v{new_vid}："
+            "患者归属、重复关系与配额保持不变，类别集合不变；旧版本及其清单已转为历史、"
+            "下载停供。请在首页对新版本重新发起划分，成功后下载恢复（仍遵守永久侧别与精确配额）。",
+            "success",
+        )
+        return redirect(url_for("index"))
+
+    @app.route("/reviews/<int:draft_id>/discard", methods=["POST"])
+    def review_discard(draft_id: int):
+        try:
+            svc.discard_draft(draft_id)
+        except InputError as exc:
+            flash(f"作废失败：{exc}", "error")
+        else:
+            flash(f"复核草稿 #{draft_id} 已作废，可重新上传复核 CSV。", "success")
+        return redirect(url_for("reviews"))
+
     # ------------------------------------------------------------ 下载
     @app.route("/manifests/<int:manifest_id>/download/<side>")
     def download(manifest_id: int, side):
@@ -223,3 +316,12 @@ def _decode(raw: bytes) -> str:
         except UnicodeDecodeError:
             continue
     return raw.decode("utf-8", errors="replace")
+
+
+def _extract_decisions(form) -> dict[str, str]:
+    """从表单提取分歧项裁决：字段名 decision::<图像号>。"""
+    return {
+        key[len("decision::"):]: val
+        for key, val in form.items()
+        if key.startswith("decision::") and val != ""
+    }

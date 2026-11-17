@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}标签复核裁决{% endblock %}
+{% block body %}
+
+<div class="card">
+  <h2>① 上传两位标注员的复核 CSV（按图像号列出，均须覆盖当前版本全部图像）</h2>
+  {% if version %}
+  <p class="muted">
+    绑定当前输入版本 <strong>v{{ version.id }}</strong>（{{ version.image_count }} 张图，
+    类别：{{ version.class_names }}）。复核标签仅限这些类别；
+    草稿创建后即绑定该版本，期间全量数据或配额一旦被更正，草稿将失效、不得提交。
+  </p>
+  <form method="post" action="{{ url_for('review_upload') }}" enctype="multipart/form-data">
+    <div class="grid2">
+      <div>
+        <p class="muted">标注员 A 复核 CSV，列：<code>图像号,标签</code>（支持中英文表头/无表头）</p>
+        <input type="file" name="review_a_csv" accept=".csv,text/csv" required>
+      </div>
+      <div>
+        <p class="muted">标注员 B 复核 CSV，列：<code>图像号,标签</code>（支持中英文表头/无表头）</p>
+        <input type="file" name="review_b_csv" accept=".csv,text/csv" required>
+      </div>
+    </div>
+    <p style="margin-top:14px">
+      <button class="btn" type="submit">校验并生成复核草稿</button>
+    </p>
+  </form>
+  {% else %}
+  <p class="reason">尚无任何输入版本，请先在「当前版本」页上传全量图像 CSV 与配额。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>② 复核草稿列表</h2>
+  <table>
+    <tr>
+      <th>草稿</th><th>绑定版本</th><th>状态</th><th>一致</th><th>分歧</th>
+      <th>生成新版本</th><th>创建时间</th><th>操作</th>
+    </tr>
+    {% for d in drafts %}
+    <tr>
+      <td>#{{ d.id }}</td>
+      <td>v{{ d.source_version_id }}
+        {% if d.version_status != 'active' %}<span class="tag hist">版本已更正</span>{% endif %}
+      </td>
+      <td>
+        {% if d.status == 'open' %}<span class="tag run">进行中</span>
+        {% elif d.status == 'submitted' %}<span class="tag ok">已提交</span>
+        {% elif d.status == 'stale' %}<span class="tag fail">已失效</span>
+        {% else %}<span class="tag train">{{ d.status }}</span>{% endif %}
+      </td>
+      <td>{{ d.agreed_count }}</td>
+      <td>{{ d.disagreed_count }}</td>
+      <td>{% if d.new_version_id %}v{{ d.new_version_id }}{% else %}—{% endif %}</td>
+      <td class="muted">{{ d.created_at }}</td>
+      <td>
+        <a class="btn small secondary" href="{{ url_for('review_detail', draft_id=d.id) }}">
+          {% if d.status == 'open' %}裁决{% else %}查看{% endif %}
+        </a>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="muted">暂无复核草稿。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% endblock %}

@@ -88,6 +88,38 @@ CREATE TABLE IF NOT EXISTS partition_jobs (
     manifest_id INTEGER
 );
 
+-- 标签复核草稿：质控员基于两份标注员复核 CSV 裁决分歧后，生成确认标签的新版本。
+-- 草稿绑定上传时的输入版本（source_version_id）；该版本被更正即失效，不得提交。
+CREATE TABLE IF NOT EXISTS review_drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_version_id INTEGER NOT NULL REFERENCES input_versions(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    status TEXT NOT NULL CHECK (status IN ('open', 'submitted', 'discarded', 'stale')),
+    review_a_csv TEXT NOT NULL,                    -- 标注员 A 原始 CSV 留档
+    review_b_csv TEXT NOT NULL,                    -- 标注员 B 原始 CSV 留档
+    agreed_count INTEGER NOT NULL,                 -- 两份复核一致的图像数
+    disagreed_count INTEGER NOT NULL,              -- 分歧图像数
+    new_version_id INTEGER,                        -- 提交成功后生成的新版本
+    submitted_at TEXT,
+    fail_reason TEXT                               -- 提交失败时的人类可读原因
+);
+
+-- 草稿逐图像明细：两份复核标签、是否一致、质控裁决的确认标签（未裁决为 NULL）。
+CREATE TABLE IF NOT EXISTS review_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id INTEGER NOT NULL REFERENCES review_drafts(id),
+    image_no TEXT NOT NULL,
+    label_a TEXT NOT NULL,
+    label_b TEXT NOT NULL,
+    is_agreed INTEGER NOT NULL,                    -- 1 一致 | 0 分歧
+    confirmed_label TEXT,
+    UNIQUE(draft_id, image_no)
+);
+
+-- 同一输入版本至多一个“未提交（进行中）”的复核草稿，数据库级硬约束。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_draft_open_per_version
+    ON review_drafts(source_version_id) WHERE status = 'open';
+
 -- 同一输入版本至多一份已发布清单（失败记录可多条，用于历史/原因查看）。
 CREATE UNIQUE INDEX IF NOT EXISTS uq_manifest_published
     ON manifests(version_id) WHERE status = 'published';
