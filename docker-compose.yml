@@ -1,0 +1,24 @@
+services:
+  pathology-splitter:
+    build: .
+    image: pathology-splitter:latest
+    container_name: pathology-splitter
+    ports:
+      - "8080:8080"
+    environment:
+      DB_PATH: /data/pathology.db
+      PORT: "8080"
+      # 生产环境请通过密钥文件等方式覆盖
+      SECRET_KEY: change-me-in-production
+    volumes:
+      - pathology_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pathology_data:

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}版本 v{{ version.id }}{% endblock %}
+{% block body %}
+<div class="card">
+  <h2>输入版本 v{{ version.id }}
+    {% if version.status=='active' %}<span class="tag ok">当前</span>{% else %}<span class="tag hist">历史</span>{% endif %}
+  </h2>
+  <p class="muted">图像 {{ version.image_count }} 张 ｜ 类别 {{ version.class_names }} ｜ 配额 {{ version.quotas }} ｜ 创建 {{ version.created_at }}</p>
+  {% if manifest %}
+    <p>发布清单 #{{ manifest.id }}：
+      {% if version.status=='active' %}
+      <a class="btn small" href="{{ url_for('download', manifest_id=manifest.id, side='val') }}">下载验证侧</a>
+      <a class="btn small secondary" href="{{ url_for('download', manifest_id=manifest.id, side='train') }}">下载训练侧</a>
+      {% else %}<span class="muted">历史版本，下载停供</span>{% endif %}
+    </p>
+  {% else %}<p class="muted">该版本无发布成功的清单。</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>全量图像（{{ images|length }}）</h2>
+  <table>
+    <tr><th>图像号</th><th>患者号</th><th>类别</th></tr>
+    {% for r in images %}<tr><td>{{ r.image_no }}</td><td>{{ r.patient_no }}</td><td>{{ r.class_name }}</td></tr>{% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>重复图像关系（{{ edges|length }} 条）</h2>
+  {% if edges %}
+  <table><tr><th>图像 A</th><th>图像 B</th></tr>
+    {% for e in edges %}<tr><td>{{ e.image_a }}</td><td>{{ e.image_b }}</td></tr>{% endfor %}
+  </table>
+  {% else %}<p class="muted">无重复关系上传。</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>原始 CSV 留档</h2>
+  <p class="muted">全量图像 CSV：</p><pre>{{ version.image_csv }}</pre>
+  <p class="muted">重复关系 CSV：</p><pre>{{ version.dup_csv or '（未上传）' }}</pre>
+</div>
+<p><a class="btn secondary small" href="{{ url_for('history') }}">返回历史</a></p>
+{% endblock %}

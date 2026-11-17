@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}作业 #{{ job.id }}{% endblock %}
+{% block body %}
+<div class="card" id="job-card">
+  <h2>划分作业 #{{ job.id }}（依据版本 v{{ job.version_id }}）
+    {% if version and version.status != 'active' %}<span class="tag hist">版本已过期</span>{% endif %}
+  </h2>
+  <p>状态：
+    {% if job.status in ('queued','running') %}<span class="tag run" id="st">{{ job.status }}（求解中，页面自动刷新）</span>
+    {% elif job.status == 'succeeded' %}<span class="tag ok">成功，清单已发布</span>
+    {% else %}<span class="tag fail">失败，未发布清单</span>{% endif %}
+  </p>
+  <p class="muted">创建 {{ job.created_at }} ｜ 开始 {{ job.started_at or '—' }} ｜ 完成 {{ job.finished_at or '—' }}</p>
+
+  {% if job.status == 'failed' %}
+  <h2 style="color:#b91c1c">无解 / 失败原因（阶段：{{ job.fail_stage }}）</h2>
+  <div class="reason">{{ job.reason }}</div>
+  {% if job.detail %}
+  <p class="muted" style="margin-top:10px">结构化诊断（最接近的可达组合、自由分量等）：</p>
+  <pre>{{ job.detail }}</pre>
+  {% endif %}
+  {% endif %}
+
+  {% if manifest and entries %}
+  <h2 style="margin-top:18px">清单 #{{ manifest.id }} 分配明细</h2>
+  <p>
+    <a class="btn small" href="{{ url_for('download', manifest_id=manifest.id, side='val') }}">下载验证侧 CSV</a>
+    <a class="btn small secondary" href="{{ url_for('download', manifest_id=manifest.id, side='train') }}">下载训练侧 CSV</a>
+  </p>
+  <table>
+    <tr><th>图像号</th><th>患者号</th><th>类别</th><th>连通分量</th><th>侧别</th></tr>
+    {% for e in entries %}
+    <tr>
+      <td>{{ e.image_no }}</td><td>{{ e.patient_no }}</td><td>{{ e.class_name }}</td>
+      <td>#{{ e.component_id }}</td>
+      <td><span class="tag {{ e.side }}">{{ '验证' if e.side=='val' else '训练' }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  <p style="margin-top:16px"><a class="btn secondary small" href="{{ url_for('index') }}">返回当前版本</a>
+     <a class="btn secondary small" href="{{ url_for('history') }}">历史</a></p>
+</div>
+
+{% if job.status in ('queued','running') %}
+<script>
+poll = setInterval(function () {
+  fetch('{{ url_for("job_status", job_id=job.id) }}').then(r => r.json()).then(d => {
+    if (d.done) { clearInterval(poll); location.reload(); }
+  }).catch(() => {});
+}, 1000);
+</script>
+{% endif %}
+{% endblock %}

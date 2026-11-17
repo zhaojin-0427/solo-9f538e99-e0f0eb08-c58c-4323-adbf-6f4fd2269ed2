@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}历史版本与作业{% endblock %}
+{% block body %}
+<div class="card">
+  <h2>输入版本历史（更正后旧版本及其清单仅作历史，下载停供）</h2>
+  <table>
+    <tr><th>版本</th><th>状态</th><th>图像数</th><th>类别/配额</th><th>创建时间</th><th>操作</th></tr>
+    {% for v in versions %}
+    <tr>
+      <td>v{{ v.id }}</td>
+      <td>{% if v.status=='active' %}<span class="tag ok">当前</span>{% else %}<span class="tag hist">历史</span>{% endif %}</td>
+      <td>{{ v.image_count }}</td>
+      <td class="muted">{{ v.class_names }} ｜ {{ v.quotas }}</td>
+      <td>{{ v.created_at }}</td>
+      <td><a class="btn small secondary" href="{{ url_for('version_detail', version_id=v.id) }}">详情</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>划分作业历史（含失败原因）</h2>
+  <table>
+    <tr><th>作业</th><th>版本</th><th>状态</th><th>阶段</th><th>原因摘要</th><th>时间</th><th></th></tr>
+    {% for j in jobs %}
+    <tr>
+      <td>#{{ j.id }}</td>
+      <td>v{{ j.version_id }}{% if j.version_status!='active' %} <span class="tag hist">过期</span>{% endif %}</td>
+      <td>{% if j.status=='succeeded' %}<span class="tag ok">成功</span>
+          {% elif j.status=='failed' %}<span class="tag fail">失败</span>
+          {% else %}<span class="tag run">{{ j.status }}</span>{% endif %}</td>
+      <td>{{ j.fail_stage or '—' }}</td>
+      <td class="muted" style="max-width:420px">{{ (j.reason or '')[:120] }}{% if j.reason and j.reason|length>120 %}…{% endif %}</td>
+      <td class="muted">{{ j.created_at }}</td>
+      <td><a class="btn small secondary" href="{{ url_for('job_detail', job_id=j.id) }}">查看</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">暂无作业</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>已发布清单</h2>
+  <table>
+    <tr><th>清单</th><th>版本</th><th>版本状态</th><th>发布时间</th><th>下载</th></tr>
+    {% for m in manifests %}
+    <tr>
+      <td>#{{ m.id }}</td>
+      <td>v{{ m.version_id }}</td>
+      <td>{% if m.version_status=='active' %}<span class="tag ok">当前</span>{% else %}<span class="tag hist">历史-停供</span>{% endif %}</td>
+      <td>{{ m.created_at }}</td>
+      <td>
+        {% if m.version_status=='active' %}
+        <a class="btn small" href="{{ url_for('download', manifest_id=m.id, side='val') }}">验证侧</a>
+        <a class="btn small secondary" href="{{ url_for('download', manifest_id=m.id, side='train') }}">训练侧</a>
+        {% else %}<span class="muted">已停供，仅可在版本详情中查看</span>{% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">暂无已发布清单</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

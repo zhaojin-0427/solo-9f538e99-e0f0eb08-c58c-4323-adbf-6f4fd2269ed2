@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block body %}
+
+<div class="card">
+  <h2>① 上传 / 更正输入（限 40 张图、4 类；每次更正都会生成新版本，旧清单立即停供）</h2>
+  <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+    <div class="grid2">
+      <div>
+        <p class="muted">全量图像 CSV，列：<code>图像号,患者号,类别</code>（支持中英文表头）</p>
+        <input type="file" name="image_csv" accept=".csv,text/csv" required>
+      </div>
+      <div>
+        <p class="muted">重复图像关系 CSV，列：<code>图像号A,图像号B</code>（可不上传）</p>
+        <input type="file" name="dup_csv" accept=".csv,text/csv">
+      </div>
+    </div>
+    <p class="muted" style="margin-top:14px">各类别<strong>验证张数配额</strong>（类别以本次上传 CSV 实际内容为准，这里先按最多 4 类占位，字段名与类别同名提交）：</p>
+    <div id="quota-box">
+      <p class="muted">上传后类别将在下方“当前版本”展示；配额请随 CSV 一起提交，按类别名填写：</p>
+      {% if version %}
+        {% for c in classes %}
+        <div style="margin:6px 0">
+          <label style="display:inline-block;width:160px">类别「{{ c }}」验证张数：</label>
+          <input type="number" name="quota::{{ c }}" min="0" value="{{ quotas[c] }}" required>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div style="margin:6px 0">
+          <label style="display:inline-block;width:160px">类别 1（名称取自 CSV）验证张数：</label>
+          <input type="number" name="quota_placeholder_1" min="0" value="0" disabled>
+          <span class="muted">← 首次上传时请先在下方文本框按“类别名=张数”提供配额</span>
+        </div>
+      {% endif %}
+    </div>
+    {% if not version %}
+    <p class="muted">首次上传配额（每行 <code>类别名=验证张数</code>，类别名须与 CSV 中完全一致）：</p>
+    <textarea name="quota_text" rows="4" style="width:100%;font-family:monospace" placeholder="肿瘤=3&#10;正常=2"></textarea>
+    {% endif %}
+    <p style="margin-top:14px"><button class="btn" type="submit">保存为新版本并更正</button></p>
+  </form>
+</div>
+
+{% if version %}
+<div class="card">
+  <h2>② 当前输入版本 v{{ version.id }} <span class="tag ok">{{ version.status }}</span>
+    <span class="muted">（{{ version.image_count }} 张图，类别：{{ version.class_names }}，创建于 {{ version.created_at }}）</span></h2>
+  <table>
+    <tr><th>类别</th>{% for c in classes %}<th>{{ c }}</th>{% endfor %}</tr>
+    <tr><td>验证配额（张）</td>{% for c in classes %}<td>{{ quotas[c] }}</td>{% endfor %}</tr>
+    <tr><td>当前清单实际验证（张）</td>{% for c in classes %}<td>{{ val_counts.get(c, 0) }}</td>{% endfor %}</tr>
+    <tr><td>当前清单实际训练（张）</td>{% for c in classes %}<td>{{ train_counts.get(c, 0) }}</td>{% endfor %}</tr>
+  </table>
+  <form method="post" action="{{ url_for('partition') }}" style="margin-top:14px">
+    <button class="btn" type="submit">③ 发起划分（求解）</button>
+    <a class="btn secondary" href="{{ url_for('version_detail', version_id=version.id) }}">查看本版数据与连通关系</a>
+  </form>
+</div>
+
+{% if manifest %}
+<div class="card">
+  <h2>④ 当前已发布清单 #{{ manifest.id }}
+    <span class="tag ok">published</span>
+    <a class="btn small" style="margin-left:10px" href="{{ url_for('download', manifest_id=manifest.id, side='val') }}">下载验证侧 CSV</a>
+    <a class="btn small secondary" href="{{ url_for('download', manifest_id=manifest.id, side='train') }}">下载训练侧 CSV</a>
+  </h2>
+  <table>
+    <tr><th>图像号</th><th>患者号</th><th>类别</th><th>连通分量</th><th>侧别</th></tr>
+    {% for e in entries %}
+    <tr>
+      <td>{{ e.image_no }}</td><td>{{ e.patient_no }}</td><td>{{ e.class_name }}</td>
+      <td>#{{ e.component_id }}</td>
+      <td><span class="tag {{ e.side }}">{{ '验证' if e.side=='val' else '训练' }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <h2>④ 当前下载状态</h2>
+  <p class="reason">当前版本尚无发布成功的清单（或上次划分失败/输入刚被更正），两侧下载均停供；重新划分成功后自动恢复。</p>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="card">
+  <h2>最近划分作业</h2>
+  <table>
+    <tr><th>作业</th><th>版本</th><th>状态</th><th>阶段</th><th>创建时间</th><th>操作</th></tr>
+    {% for j in jobs %}
+    <tr>
+      <td>#{{ j.id }}</td>
+      <td>v{{ j.version_id }}
+        {% if j.version_status != 'active' %}<span class="tag hist">已过期</span>{% endif %}</td>
+      <td>
+        {% if j.status in ('queued','running') %}<span class="tag run">{{ j.status }}</span>
+        {% elif j.status == 'succeeded' %}<span class="tag ok">成功</span>
+        {% else %}<span class="tag fail">失败</span>{% endif %}
+      </td>
+      <td>{{ j.fail_stage or '—' }}</td>
+      <td>{{ j.created_at }}</td>
+      <td><a class="btn small secondary" href="{{ url_for('job_detail', job_id=j.id) }}">查看原因/结果</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">暂无作业</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if not version %}
+<script>
+// 首次上传：把 quota_text 文本框转成 quota:: 字段随表单提交
+document.querySelector('form[action$="/upload"]').addEventListener('submit', function (ev) {
+  var ta = document.querySelector('textarea[name=quota_text]');
+  if (!ta) return;
+  ta.value.split('\n').forEach(function (line) {
+    var m = line.match(/^\s*(.+?)\s*=\s*(\d+)\s*$/);
+    if (m) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'quota::' + m[1]; inp.value = m[2];
+      ev.target.appendChild(inp);
+    }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

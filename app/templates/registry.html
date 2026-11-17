@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}永久侧别登记{% endblock %}
+{% block body %}
+<div class="card">
+  <h2>侧别永久登记表（模型“见过”的图像，删后重传也不重分）</h2>
+  <p class="muted">每次成功发布时，图像侧别写入此表且全局唯一；后续任何划分都必须服从已有登记，冲突即判关联冲突、拒绝发布。</p>
+  <table>
+    <tr><th>图像号</th><th>永久侧别</th><th>首次清单</th><th>登记时间</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.image_no }}</td>
+      <td><span class="tag {{ r.side }}">{{ '验证' if r.side=='val' else '训练' }}</span></td>
+      <td>#{{ r.first_manifest_id }}</td>
+      <td>{{ r.locked_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">尚无登记（尚未成功发布过清单）。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
